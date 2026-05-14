@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Svelte DevTools</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body, #svelte-devtools-root {
+      height: 100%;
+      width: 100%;
+      background: #0f1923;
+      color: #d0d0d0;
+      font-family: 'Consolas', 'Fira Code', monospace;
+      font-size: 13px;
+      overflow: hidden;
+    }
+    #svelte-devtools-root {
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Shared component styles (same as main.ts CSS, minus panel/badge positioning) ── */
+    .section { padding: 8px; overflow-y: auto; flex: 1; }
+    h3 { font-size: 11px; text-transform: uppercase; color: #888; margin: 0 0 4px; }
+    .empty { color: #555; font-size: 12px; padding: 4px 0; }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    th { text-align: left; color: #666; font-weight: 500; padding: 2px 6px; font-size: 11px; }
+    td { padding: 3px 6px; border-bottom: 1px solid rgba(255,255,255,0.05); }
+
+    .titlebar {
+      display: flex; align-items: center; padding: 4px 10px; gap: 0;
+      background: #152030; border-bottom: 1px solid rgba(255,255,255,0.07);
+      user-select: none; flex-shrink: 0; min-height: 36px;
+    }
+    .logo { font-size: 13px; font-weight: 700; color: #ff3e00; margin-left: auto; }
+    .close { background: none; border: none; color: #666; cursor: pointer; font-size: 14px; line-height: 1; padding: 2px 4px; }
+    .close:hover { color: #fff; }
+
+    .tabs {
+      display: flex; border-bottom: 1px solid rgba(255,255,255,0.07);
+      background: #0f1923; overflow-x: auto; flex-shrink: 0;
+    }
+    .tabs button {
+      background: none; border: none; border-bottom: 2px solid transparent;
+      color: #666; font-size: 11px; padding: 6px 12px; cursor: pointer;
+      white-space: nowrap; font-family: inherit;
+    }
+    .tabs button:hover { color: #ccc; }
+    .tabs button.active { color: #ff9d6c; border-bottom-color: #ff3e00; }
+    .tabs button.settings-tab { margin-left: auto; }
+
+    .content { flex: 1; overflow: hidden; display: flex; flex-direction: column; min-height: 0; }
+    .badge { display: none; } /* no floating badge in iframe mode */
+
+    .tree { overflow-y: auto; flex: 1; padding: 6px 0; }
+    .node { user-select: none; }
+    .node-row { display: flex; align-items: center; gap: 4px; padding: 2px 6px; border-radius: 4px; cursor: pointer; font-size: 12px; }
+    .node-row:hover { background: rgba(255,255,255,0.07); }
+    .node-row.selected { background: rgba(255,62,0,0.25); }
+    .toggle { background: none; border: none; color: #aaa; cursor: pointer; padding: 0; font-size: 10px; width: 14px; }
+    .toggle-spacer { width: 14px; display: inline-block; }
+    .comp-name { color: #ff9d6c; font-weight: 600; }
+    .render-badge { font-size: 10px; background: rgba(255,255,255,0.1); border-radius: 10px; padding: 0 5px; color: #aaa; margin-left: auto; }
+
+    .key { color: #7ecfff; width: 40%; }
+    .val { color: #c8e6c9; word-break: break-all; }
+    .val-btn { background: none; border: none; color: inherit; cursor: pointer; text-align: left; width: 100%; padding: 0; font-size: 12px; }
+    .val-btn:hover { text-decoration: underline; }
+    input.edit { background: #1e2a35; border: 1px solid #ff3e00; color: #c8e6c9; font-size: 12px; width: 100%; padding: 1px 4px; border-radius: 3px; }
+
+    .store-key { color: #ce93d8; width: 40%; }
+    .perf-key { color: #ff9d6c; }
+    .num { color: #aaa; text-align: right; }
+    .bar-cell { width: 80px; }
+    .bar { height: 8px; border-radius: 4px; background: #4caf50; min-width: 2px; }
+    .bar.slow { background: #f44336; }
+
+    .header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+    .header button { font-size: 11px; padding: 2px 8px; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); border-radius: 4px; color: #aaa; cursor: pointer; }
+    .header button:hover { background: rgba(255,255,255,0.14); }
+    .time { color: #666; white-space: nowrap; }
+    .comp { color: #ff9d6c; }
+    .evt { color: #7ecfff; }
+    .detail { color: #c8e6c9; word-break: break-all; max-width: 180px; }
+
+    /* Pin button */
+    .pin-cell { width: 22px; text-align: center; padding: 0; }
+    .pin-btn { background: none; border: none; cursor: pointer; color: #999; font-size: 14px; padding: 0 2px; line-height: 1; transition: color 0.1s; }
+    .pin-btn.pinned { color: #ff9d6c; }
+    .pin-btn:hover { color: #aaa; }
+    .jump-btn { background: none; border: none; cursor: pointer; color: #ff9d6c; font-size: 14px; padding: 0 2px; line-height: 1; opacity: 0.6; }
+    .jump-btn:hover { opacity: 1; }
+    .jump { width: 20px; text-align: center; }
+
+    /* The panel in iframe mode fills the container */
+    .panel {
+      display: flex; flex-direction: column;
+      width: 100%; height: 100%;
+      background: #0f1923;
+      overflow: hidden;
+      box-shadow: inset 0 0 0 0 transparent;
+      transition: box-shadow 0.15s;
+    }
+
+    /* Pick active — bright orange inset border */
+    .panel.pick-active { box-shadow: inset 0 0 0 3px #ff3e00; }
+
+    /* Paused — amber/yellow inset border (distinct from pick orange) */
+    .panel.paused { box-shadow: inset 0 0 0 3px #c9a227; }
+  </style>
+</head>
+<body>
+  <script type="module" src="./iframe-entry.ts"></script>
+</body>
+</html>

@@ -26,7 +26,6 @@ Works as a native tab inside the **[@vitejs/devtools](https://github.com/vitejs/
 | **Props Editor** | Click any prop value to edit it live in the browser |
 | **Store Inspector** | Current value of every registered Svelte store |
 | **Performance Profiler** | Render count and cumulative / average time per component |
-| **Event Log** | Timestamped log of every dispatched component event |
 | **History** | Pinned prop/state values with a change log |
 | **Component Picker** | Click any element in the app to jump to its component (Alt+C or Esc to cancel) |
 | **Pause / Resume** | Freeze tracking with zero runtime overhead while paused |
@@ -68,12 +67,13 @@ Then wire both plugins in your `vite.config.ts`:
 import { defineConfig } from 'vite'
 import { svelte } from '@sveltejs/vite-plugin-svelte'
 import { svelteDevTools } from 'vite-plugin-svelte-devtools'
+import { DevTools } from '@vitejs/devtools'
 
 const devtools = svelteDevTools()
 
 export default defineConfig({
-  devtools: true,           // enables the @vitejs/devtools panel
   plugins: [
+    DevTools(),
     svelte({ preprocess: devtools.preprocess }),
     devtools.plugin,
   ],

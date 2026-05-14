@@ -76,14 +76,15 @@ export interface SvelteDevToolsOptions {
 /**
  * Usage in vite.config.ts:
  *
+ *   import { DevTools } from '@vitejs/devtools'
  *   import { svelte } from '@sveltejs/vite-plugin-svelte'
  *   import { svelteDevTools } from 'vite-plugin-svelte-devtools'
  *
  *   const devtools = svelteDevTools()
  *
  *   export default defineConfig({
- *     devtools: true,
  *     plugins: [
+ *       DevTools(),
  *       svelte({ preprocess: devtools.preprocess }),
  *       devtools.plugin,
  *     ],

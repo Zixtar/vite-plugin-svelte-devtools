@@ -462,12 +462,7 @@ export function unpinOne(nodeId: NodeId, key: string) {
 }
 
 export function openInEditor(file: string) {
-  // Calls the Vite __open-in-editor endpoint which uses launch-editor under
-  // the hood — supports VS Code, WebStorm, Cursor, Vim, Emacs, Notepad++, etc.
-  // The endpoint is registered by the Vite plugin on the dev server.
-  // If the user has set a preferred editor in Settings, pass it as a hint.
-  const editorParam = settings.editor ? `&editor=${encodeURIComponent(settings.editor)}` : ''
-  fetch(`/__open-in-editor?file=${encodeURIComponent(file)}${editorParam}`).catch(() => {})
+  fetch(`/__open-in-editor?file=${encodeURIComponent(file)}`).catch(() => {})
 }
 
 export function scrollToComponent(id: NodeId) {
@@ -479,20 +474,10 @@ export function setStore(name: string, value: unknown) {
 }
 
 const TRACKING_KEY = 'svelte-devtools:tracking'
-const SETTINGS_KEY = 'svelte-devtools:settings'
 
 function loadTracking(): boolean {
   try {
-    // First check if there's a stored settings with startPaused
-    const raw = localStorage.getItem(SETTINGS_KEY)
-    if (raw) {
-      const parsed = JSON.parse(raw)
-      if (typeof parsed.startPaused === 'boolean') {
-        return !parsed.startPaused
-      }
-    }
-    // Default to tracking enabled
-    return true
+    return localStorage.getItem(TRACKING_KEY) !== 'false'
   } catch (_e) {
     return true
   }
@@ -500,32 +485,6 @@ function loadTracking(): boolean {
 
 function saveTracking(enabled: boolean) {
   try { localStorage.setItem(TRACKING_KEY, String(enabled)) } catch (_e) { /* ignore */ }
-}
-
-interface Settings {
-  editor: string
-  fontSize: number
-  startPaused: boolean
-}
-
-function loadSettings(): Settings {
-  try {
-    const raw = localStorage.getItem(SETTINGS_KEY)
-    if (raw) return { editor: '', fontSize: 12, startPaused: false, ...JSON.parse(raw) }
-  } catch (_e) { /* ignore */ }
-  return { editor: '', fontSize: 12, startPaused: false }
-}
-
-export const settings = $state<Settings>(loadSettings())
-
-export function saveSettings() {
-  try { 
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify({ 
-      editor: settings.editor, 
-      fontSize: settings.fontSize,
-      startPaused: settings.startPaused 
-    })) 
-  } catch (_e) { /* ignore */ }
 }
 
 export function setTracking(enabled: boolean) {

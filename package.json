@@ -51,7 +51,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Zixtar/vite-plugin-svelte-devtools.git"
+    "url": "git+https://github.com/Zixtar/vite-plugin-svelte-devtools.git"
   },
   "homepage": "https://github.com/Zixtar/vite-plugin-svelte-devtools#readme",
   "bugs": {

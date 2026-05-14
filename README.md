@@ -13,7 +13,7 @@
 A zero-config devtools panel for **Svelte 5 + Vite** apps.  
 Works as a native tab inside the **[@vitejs/devtools](https://github.com/vitejs/devtools)** browser panel.
 
-![Svelte DevTools panel](https://raw.githubusercontent.com/Zixtar/vite-plugin-svelte-devtools/main/docs/screenshot.png)
+![Svelte DevTools panel](https://raw.githubusercontent.com/Zixtar/vite-plugin-svelte-devtools/master/docs/screenshot.png)
 
 ---
 

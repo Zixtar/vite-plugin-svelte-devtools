@@ -33,7 +33,7 @@ function bootstrap() {
   const root = document.createElement('div')
   root.id = 'svelte-devtools-root'
   document.body.appendChild(root)
-  mount(DevTools, { target: root })
+  mount(DevTools, { target: root, props: { alwaysOpen: true } })
 }
 
 if (document.readyState === 'loading') {

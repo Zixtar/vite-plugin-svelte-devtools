@@ -15,19 +15,49 @@
     { id: 'history', label: 'History' },
     { id: 'settings', label: 'Settings' },
   ]
+
+  interface Props { alwaysOpen?: boolean }
+  let { alwaysOpen = false }: Props = $props()
+
+  // Start closed in standalone mode; always open in iframe mode
+  // $state initialised from prop — alwaysOpen never changes after mount, so snapshot is correct
+  // svelte-ignore state_referenced_locally
+  let open = $state(alwaysOpen)
+
+  // Panel position (px from top-left of viewport)
+  let panelX = $state(16)
+  let panelY = $state(16)
+
+  function startDrag(e: PointerEvent) {
+    if (e.button !== 0) return
+    if ((e.target as HTMLElement).closest('button')) return
+    e.preventDefault()
+    const startX = e.clientX - panelX
+    const startY = e.clientY - panelY
+    function onMove(ev: PointerEvent) {
+      panelX = ev.clientX - startX
+      panelY = ev.clientY - startY
+    }
+    function onUp() {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+  }
 </script>
 
+{#if open}
 <div
   class="panel"
   class:pick-active={bridge.pickMode}
   class:paused={!bridge.tracking}
   role="complementary"
   aria-label="Svelte DevTools"
-  style="font-size: {settings.fontSize}px"
+  style="font-size: {settings.fontSize}px; left: {panelX}px; top: {panelY}px;"
 >
-  <div class="titlebar" role="toolbar" tabindex="0">
+  <div class="titlebar" role="toolbar" tabindex="0" onpointerdown={startDrag}>
     <div class="titlebar-left">
-      <!-- Pause / Resume tracking -->
       <button
         class="tb-btn"
         class:tb-btn--paused={!bridge.tracking}
@@ -37,20 +67,17 @@
         aria-pressed={bridge.tracking}
       >
         {#if bridge.tracking}
-          <!-- pause icon: two vertical bars -->
           <svg width="11" height="13" viewBox="0 0 11 13" fill="currentColor" aria-hidden="true">
             <rect x="0" y="0" width="3.5" height="13" rx="1"/>
             <rect x="7.5" y="0" width="3.5" height="13" rx="1"/>
           </svg>
         {:else}
-          <!-- play icon: triangle -->
           <svg width="11" height="13" viewBox="0 0 11 13" fill="currentColor" aria-hidden="true">
             <polygon points="0,0 11,6.5 0,13"/>
           </svg>
         {/if}
       </button>
 
-      <!-- Pick component -->
       <button
         class="tb-btn"
         class:tb-btn--active={bridge.pickMode}
@@ -59,7 +86,6 @@
         aria-label="Pick component"
         aria-pressed={bridge.pickMode}
       >
-        <!-- cursor / crosshair icon -->
         <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true">
           <circle cx="6.5" cy="6.5" r="4"/>
           <line x1="6.5" y1="0"   x2="6.5" y2="3"/>
@@ -73,6 +99,19 @@
     </div>
 
     <span class="logo">⬡ Svelte DevTools</span>
+
+    <button
+      class="tb-btn tb-btn--close"
+      onclick={() => (open = false)}
+      title="Close DevTools"
+      aria-label="Close DevTools"
+      style={alwaysOpen ? 'display:none' : ''}
+    >
+      <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true">
+        <line x1="1" y1="1" x2="9" y2="9"/>
+        <line x1="9" y1="1" x2="1" y2="9"/>
+      </svg>
+    </button>
   </div>
 
   {#if !bridge.tracking}
@@ -96,7 +135,6 @@
         </button>
       {/if}
     {/each}
-    <!-- Settings tab on the right -->
     <button
       role="tab"
       aria-selected={bridge.activeTab === 'settings'}
@@ -122,75 +160,15 @@
     {/if}
   </div>
 </div>
+{/if}
 
-<style>
-  .titlebar-left {
-    display: flex;
-    align-items: center;
-    gap: 2px;
-    flex-shrink: 0;
-  }
-
-  /* Unified toolbar icon button */
-  .tb-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 26px;
-    height: 26px;
-    padding: 0;
-    background: transparent;
-    border: none;
-    border-radius: 5px;
-    color: #778899;
-    cursor: pointer;
-    transition: background 0.12s, color 0.12s;
-    flex-shrink: 0;
-  }
-
-  .tb-btn:hover {
-    background: rgba(255, 255, 255, 0.08);
-    color: #ccd6e0;
-  }
-
-  /* Pause state: amber/yellow to signal "recording stopped" */
-  .tb-btn--paused {
-    color: #c9a227;
-  }
-  .tb-btn--paused:hover {
-    background: rgba(201, 162, 39, 0.14);
-    color: #e6bc40;
-  }
-
-  /* Pick mode active: accent highlight */
-  .tb-btn--active {
-    background: rgba(255, 62, 0, 0.15);
-    color: #ff9d6c;
-  }
-  .tb-btn--active:hover {
-    background: rgba(255, 62, 0, 0.22);
-    color: #ffb38a;
-  }
-
-  /* Thin vertical separator between actions and logo */
-  .tb-divider {
-    width: 1px;
-    height: 16px;
-    background: rgba(255, 255, 255, 0.1);
-    margin: 0 6px;
-    flex-shrink: 0;
-  }
-
-  .paused-banner {
-    background: rgba(201, 162, 39, 0.1);
-    border-bottom: 1px solid rgba(201, 162, 39, 0.3);
-    color: #d4a92a;
-    font-size: 11px;
-    padding: 4px 10px;
-    text-align: center;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 2px;
-  }
-</style>
+{#if !open && !alwaysOpen}
+<button
+  class="badge"
+  onclick={() => (open = true)}
+  title="Open Svelte DevTools"
+  aria-label="Open Svelte DevTools"
+>
+  ⬡
+</button>
+{/if}

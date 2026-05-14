@@ -1,0 +1,345 @@
+/*
+ * devtools.css — single source of truth for all DevTools overlay styles.
+ *
+ * Consumed in TWO ways:
+ *   1. main.ts       — imports this file as a raw string (via `?raw`) and
+ *                      injects it into the Shadow DOM <style> element.
+ *   2. index.html    — references this file with <link rel="stylesheet"> so
+ *                      the Vite DevTools iframe SPA picks it up directly.
+ *
+ * Path-specific overrides (panel sizing, badge/close visibility) live at the
+ * bottom of each consumer, NOT here, to keep this file unambiguous.
+ */
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+/* ── Panel shell ─────────────────────────────────────────────────────────── */
+.panel {
+  position: fixed;
+  z-index: 2147483647;
+  width: 440px;
+  height: 580px;
+  min-width: 300px;
+  min-height: 200px;
+  background: #0f1923;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 8px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+  display: flex;
+  flex-direction: column;
+  font-family: 'Consolas', 'Fira Code', monospace;
+  font-size: 13px;
+  color: #d0d0d0;
+  overflow: hidden;
+  resize: both;
+  pointer-events: auto;
+}
+.panel.paused      { outline: 3px solid #c9a227; }
+.panel.pick-active { outline: 3px solid #ff3e00; }
+
+/* ── Titlebar ────────────────────────────────────────────────────────────── */
+.titlebar {
+  display: flex;
+  align-items: center;
+  padding: 4px 6px 4px 8px;
+  gap: 0;
+  background: #152030;
+  cursor: grab;
+  border-bottom: 1px solid rgba(255,255,255,0.07);
+  user-select: none;
+  flex-shrink: 0;
+}
+.titlebar:active { cursor: grabbing; }
+
+.titlebar-left {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.tb-divider {
+  width: 1px;
+  height: 16px;
+  background: rgba(255,255,255,0.1);
+  margin: 0 6px;
+  flex-shrink: 0;
+}
+
+.logo {
+  flex: 1;
+  font-size: 12px;
+  font-weight: 700;
+  color: #ff3e00;
+  letter-spacing: 0.03em;
+  pointer-events: none;
+}
+
+/* ── Toolbar icon buttons ────────────────────────────────────────────────── */
+.tb-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 5px;
+  color: #778899;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+  flex-shrink: 0;
+}
+.tb-btn:hover              { background: rgba(255,255,255,0.08); color: #ccd6e0; }
+.tb-btn--paused            { color: #c9a227; }
+.tb-btn--paused:hover      { background: rgba(201,162,39,0.14); color: #e6bc40; }
+.tb-btn--active            { background: rgba(255,62,0,0.15); color: #ff9d6c; }
+.tb-btn--active:hover      { background: rgba(255,62,0,0.22); color: #ffb38a; }
+.tb-btn--close:hover       { background: rgba(255,62,0,0.18); color: #ff6644; }
+
+/* ── Tabs ────────────────────────────────────────────────────────────────── */
+.tabs {
+  display: flex;
+  border-bottom: 1px solid rgba(255,255,255,0.07);
+  background: #0f1923;
+  overflow-x: auto;
+  flex-shrink: 0;
+}
+.tabs button {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: #666;
+  font-size: 11px;
+  padding: 6px 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  font-family: inherit;
+}
+.tabs button:hover        { color: #ccc; }
+.tabs button.active       { color: #ff9d6c; border-bottom-color: #ff3e00; }
+.tabs button.settings-tab { margin-left: auto; }
+
+/* ── Content area ────────────────────────────────────────────────────────── */
+.content {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* ── Paused banner ───────────────────────────────────────────────────────── */
+.paused-banner {
+  background: rgba(201,162,39,0.1);
+  border-bottom: 1px solid rgba(201,162,39,0.3);
+  color: #d4a92a;
+  font-size: 11px;
+  padding: 4px 10px;
+  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+/* ── Badge (closed state) ────────────────────────────────────────────────── */
+.badge {
+  position: fixed;
+  bottom: 16px;
+  right: 16px;
+  z-index: 2147483647;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: #ff3e00;
+  border: none;
+  color: #fff;
+  font-size: 20px;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
+  transition: background 0.15s, transform 0.1s;
+}
+.badge:hover { background: #e83000; transform: scale(1.08); }
+
+/* ── Shared sub-component base ───────────────────────────────────────────── */
+.section { padding: 8px; overflow-y: auto; flex: 1; }
+h3 { font-size: 11px; text-transform: uppercase; color: #888; margin: 0 0 4px; }
+.empty { color: #555; font-size: 12px; padding: 4px 0; }
+table { width: 100%; border-collapse: collapse; font-size: 12px; }
+th { text-align: left; color: #666; font-weight: 500; padding: 2px 6px; font-size: 11px; }
+td { padding: 3px 6px; border-bottom: 1px solid rgba(255,255,255,0.05); }
+
+/* ── Tree (TreeNode / ComponentTree) ─────────────────────────────────────── */
+.tree { overflow-y: auto; flex: 1; padding: 6px 0; }
+.node { user-select: none; }
+.node-row { display: flex; align-items: center; gap: 4px; padding: 2px 6px; border-radius: 4px; cursor: pointer; font-size: 12px; }
+.node-row:hover    { background: rgba(255,255,255,0.07); }
+.node-row.selected { background: rgba(255,62,0,0.25); }
+.toggle        { background: none; border: none; color: #aaa; cursor: pointer; padding: 0; font-size: 10px; width: 14px; }
+.toggle-spacer { width: 14px; display: inline-block; }
+.comp-name     { color: #ff9d6c; font-weight: 600; font-family: monospace; }
+.render-badge  { font-size: 10px; background: rgba(255,255,255,0.1); border-radius: 10px; padding: 0 5px; color: #aaa; margin-left: auto; }
+
+/* ── ComponentTree (virtual-scroll variant) ──────────────────────────────── */
+.search-bar {
+  position: relative;
+  padding: 4px 6px;
+  border-bottom: 1px solid rgba(255,255,255,0.07);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.search-input {
+  flex: 1;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 4px;
+  color: inherit;
+  font-size: 11px;
+  padding: 3px 6px;
+  outline: none;
+  min-width: 0;
+}
+.search-input:focus { border-color: rgba(99,179,237,0.5); background: rgba(255,255,255,0.09); }
+.search-input::-webkit-search-cancel-button { display: none; }
+.search-clear {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: rgba(255,255,255,0.4);
+  font-size: 10px;
+  padding: 1px 3px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+.search-clear:hover { color: rgba(255,255,255,0.8); background: rgba(255,255,255,0.08); }
+.tree-viewport { overflow-y: auto; flex: 1; min-height: 0; position: relative; }
+.row {
+  position: absolute;
+  left: 0; right: 0;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  font-size: 12px;
+  box-sizing: border-box;
+}
+.row:hover    { background: rgba(255,255,255,0.06); }
+.row.selected { background: rgba(99,179,237,0.25); }
+.row.ancestor { opacity: 0.5; }
+.comp-name mark { background: rgba(255,200,50,0.4); color: #ffe87a; border-radius: 2px; padding: 0 1px; }
+
+/* ── InspectorPane ───────────────────────────────────────────────────────── */
+.inspector { display: flex; height: 100%; overflow: hidden; }
+.inspector.dragging { cursor: col-resize; user-select: none; }
+.pane { height: 100%; overflow: hidden; flex-shrink: 0; display: flex; flex-direction: column; }
+.pane-left { border-right: 1px solid rgba(255,255,255,0.08); }
+.pane-right { flex: 1; min-width: 0; }
+.divider { width: 5px; cursor: col-resize; flex-shrink: 0; background: transparent; transition: background 0.15s; }
+.divider:hover, .dragging .divider { background: rgba(99,179,237,0.3); }
+.detail-scroll { height: 100%; overflow-y: auto; }
+
+/* ── ComponentDetail ─────────────────────────────────────────────────────── */
+.comp-header {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 8px 4px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  flex-shrink: 0;
+}
+.comp-title    { font-family: monospace; font-size: 13px; color: #ff9d6c; font-weight: 600; }
+.open-file-btn {
+  background: none; border: none; cursor: pointer;
+  font-family: monospace; font-size: 11px; color: #7ecfff;
+  padding: 0; text-decoration: underline; text-underline-offset: 2px; opacity: 0.8;
+}
+.open-file-btn:hover { opacity: 1; color: #a8dfff; }
+.scroll-btn {
+  background: none; border: none; cursor: pointer;
+  font-size: 13px; color: rgba(255,255,255,0.35); padding: 0;
+  line-height: 1; margin-left: auto;
+}
+.scroll-btn:hover  { color: #7ecfff; }
+.key  { color: #7ecfff; width: 40%; font-family: monospace; }
+.val  { color: #c8e6c9; word-break: break-all; font-family: monospace; }
+.val-btn { background: none; border: none; color: inherit; cursor: pointer; text-align: left; width: 100%; padding: 0; font-size: 12px; font-family: monospace; }
+.val-btn:hover     { text-decoration: underline; }
+.val-btn.val-undef { opacity: 0.5; }
+.val-ro  { opacity: 0.75; }
+.lock    { font-size: 10px; }
+.edit    { font-family: monospace; font-size: 12px; background: #1a1a2e; border: 1px solid #4a90d9; color: #fff; padding: 1px 4px; width: 100%; border-radius: 2px; }
+.copy-cell { width: 22px; }
+.copy-btn  { background: none; border: none; cursor: pointer; color: rgba(255,255,255,0.3); font-size: 12px; padding: 0; line-height: 1; }
+.copy-btn:hover, .copy-btn.copied { color: #7ecfff; }
+
+/* ── Pin / jump buttons ──────────────────────────────────────────────────── */
+.pin-cell        { width: 22px; text-align: center; padding: 0; }
+.pin-btn         { background: none; border: none; cursor: pointer; color: rgba(255,255,255,0.3); font-size: 12px; padding: 0; }
+.pin-btn:hover, .pin-btn.pinned { color: #ff9d6c; }
+.jump-btn        { background: none; border: none; cursor: pointer; color: #ff9d6c; font-size: 14px; padding: 0 2px; line-height: 1; opacity: 0.6; }
+.jump-btn:hover  { opacity: 1; }
+.jump            { width: 20px; text-align: center; }
+
+/* ── HistoryPanel ────────────────────────────────────────────────────────── */
+.history-root { display: flex; flex-direction: column; height: 100%; }
+.sub-tabs { display: flex; border-bottom: 1px solid #1e2d3d; padding: 0 8px; flex-shrink: 0; }
+.sub-tabs button { background: none; border: none; border-bottom: 2px solid transparent; color: #666; font-size: 11px; padding: 4px 10px; cursor: pointer; margin-bottom: -1px; }
+.sub-tabs button.active            { color: #ff9d6c; border-bottom-color: #ff9d6c; }
+.sub-tabs button:hover:not(.active){ color: #aaa; }
+.old-val { color: #888; word-break: break-all; max-width: 120px; text-decoration: line-through; }
+tr.destroyed td   { opacity: 0.5; }
+tr.destroyed .comp { text-decoration: line-through; }
+.kind-badge             { display: inline-block; font-size: 9px; padding: 1px 4px; border-radius: 3px; background: rgba(255,157,108,0.2); color: #ff9d6c; margin-left: 4px; vertical-align: middle; text-transform: uppercase; }
+.kind-badge.state-badge     { background: rgba(126,207,255,0.2); color: #7ecfff; }
+.kind-badge.destroyed-badge { background: rgba(255,80,80,0.15); color: #ff6060; }
+
+/* ── PinnedPanel ─────────────────────────────────────────────────────────── */
+.unpin-cell { width: 22px; text-align: center; padding: 0; }
+.unpin-btn  { background: none; border: none; cursor: pointer; color: #ff9d6c; font-size: 14px; padding: 0 2px; line-height: 1; transition: color 0.1s; }
+.unpin-btn:hover { color: #ffb890; }
+
+/* ── ContextPanel ────────────────────────────────────────────────────────── */
+.ctx-key { font-family: monospace; font-size: 12px; color: #c3a6ff; }
+code { background: #2a2a3a; padding: 1px 4px; border-radius: 3px; font-size: 11px; }
+
+/* ── SettingsPanel ───────────────────────────────────────────────────────── */
+.settings-table    { width: 100%; border-collapse: collapse; font-size: 12px; }
+.settings-table td { padding: 5px 4px; vertical-align: top; }
+.label { color: rgba(255,255,255,0.5); white-space: nowrap; padding-right: 12px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; padding-top: 8px; }
+select { background: #1a1a2e; border: 1px solid rgba(255,255,255,0.15); color: #ccd6e0; font-size: 12px; padding: 3px 6px; border-radius: 3px; cursor: pointer; }
+select:focus { outline: 1px solid #4a90d9; }
+.hint { font-size: 10px; opacity: 0.4; margin: 3px 0 0; font-style: italic; }
+.hint code { font-family: monospace; }
+.checkbox-label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+input[type="checkbox"] { accent-color: #ff9d6c; cursor: pointer; }
+
+/* ── PerfPanel ───────────────────────────────────────────────────────────── */
+.perf-key { font-family: monospace; color: #a8dfff; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.num      { color: #aaa; text-align: right; font-family: monospace; }
+.bar-cell { width: 80px; }
+.bar      { height: 8px; border-radius: 4px; background: #4caf50; min-width: 2px; }
+.bar.slow { background: #f44336; }
+
+/* ── StoreInspector ──────────────────────────────────────────────────────── */
+.store-key { font-family: monospace; font-size: 12px; color: #7ecfff; white-space: nowrap; }
+
+/* ── EventLog ────────────────────────────────────────────────────────────── */
+.header        { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.header button { font-size: 11px; padding: 2px 8px; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); border-radius: 4px; color: #aaa; cursor: pointer; }
+.header button:hover { background: rgba(255,255,255,0.14); }
+.time   { color: #666; white-space: nowrap; }
+.comp   { color: #ff9d6c; }
+.evt    { color: #7ecfff; }
+.detail { color: #c8e6c9; word-break: break-all; max-width: 180px; }

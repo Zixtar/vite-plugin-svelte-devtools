@@ -57,7 +57,8 @@ const libConfig = defineConfig({
           chunkFileNames: 'chunks/[name]-[hash].cjs',
         },
       ],
-      external: ['vite', 'fs', 'path', 'url', 'module', 'node:fs', 'node:path', 'node:url'],
+      external: ['vite', 'fs', 'path', 'url', 'module', 'os', 'child_process', 'node:fs', 'node:path', 'node:url', 'node:os', 'node:child_process', '@vitejs/devtools-kit', 'launch-editor'],
+      preserveEntrySignatures: 'exports-only',
     },
   },
 })

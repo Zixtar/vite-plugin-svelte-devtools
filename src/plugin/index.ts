@@ -3,7 +3,6 @@ import type { Plugin } from 'vite'
 import { resolve, dirname, basename } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { devToolsPreprocessor } from './preprocessor.ts'
-import { defineRpcFunction } from '@vitejs/devtools-kit'
 import launchEditor from 'launch-editor'
 
 
@@ -31,17 +30,19 @@ export function openInEditorHandler(
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
 // Absolute path to the self-contained runtime source file.
-const RUNTIME_SRC = resolve(__dirname, '../runtime/index.ts')
-const OVERLAY_MAIN_SRC = resolve(__dirname, '../overlay/main.ts')
+// These are served as source through the user's Vite dev pipeline so that
+// import.meta.hot and other Vite-specific transforms work correctly.
+const RUNTIME_SRC = resolve(__dirname, '../../src/runtime/index.ts')
+const OVERLAY_MAIN_SRC = resolve(__dirname, '../../src/overlay/main.ts')
 
 // The overlay SPA built output (used when serving inside Vite DevTools iframe)
-const OVERLAY_DIST = resolve(__dirname, '../../dist/client')
+const OVERLAY_DIST = resolve(__dirname, '../client')
 
 const VIRTUAL_RUNTIME = 'virtual:svelte-devtools/runtime'
 const RESOLVED_VIRTUAL = '\0virtual:svelte-devtools/runtime'
 
 // The client-side script that wires the runtime event bus to Vite DevTools RPC
-const DEVTOOLS_CLIENT_SRC = resolve(__dirname, '../runtime/devtools-client.ts')
+const DEVTOOLS_CLIENT_SRC = resolve(__dirname, '../../src/runtime/devtools-client.ts')
 const VIRTUAL_DEVTOOLS_CLIENT = 'virtual:svelte-devtools/devtools-client'
 const RESOLVED_DEVTOOLS_CLIENT = '\0virtual:svelte-devtools/devtools-client'
 
@@ -155,7 +156,11 @@ export function svelteDevTools(options: SvelteDevToolsOptions = {}) {
     // @vitejs/devtools integration
     // ---------------------------------------------------------------------------
     devtools: {
-      setup(ctx) {
+      async setup(ctx) {
+        // Dynamically import so the plugin doesn't crash when @vitejs/devtools
+        // is not installed (standalone / legacy overlay mode).
+        const { defineRpcFunction } = await import('@vitejs/devtools-kit')
+
         // Serve the overlay SPA as a static asset at /.svelte-devtools/
         ctx.views.hostStatic('/.svelte-devtools/', OVERLAY_DIST)
 

@@ -49,11 +49,12 @@
   "keywords": [
     "svelte",
     "svelte5",
+	"svelte-devtools",
+	"vite-devtools-plugin",
     "vite",
     "devtools",
     "plugin",
     "inspector",
-    "component-tree",
     "debugging"
   ],
   "author": "Zixtar",

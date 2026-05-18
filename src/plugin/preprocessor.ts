@@ -53,6 +53,7 @@
 
 import type { PreprocessorGroup } from 'svelte/compiler'
 import { readFileSync } from 'fs'
+import MagicString from 'magic-string'
 
 export function devToolsPreprocessor(componentName: string): PreprocessorGroup {
   return {
@@ -186,7 +187,16 @@ $effect(() => {
           )
         : content
 
-      return { code: rewrittenContent + injection }
+      // Use MagicString so the original code lines keep their source positions.
+      // The appended injection lines have no source mapping (they are generated).
+      // Passing source: filename ensures Vite's combineSourcemaps() doesn't
+      // replace sources[0] with the original unpreprocessed file content.
+      const ms = new MagicString(rewrittenContent)
+      ms.append(injection)
+      return {
+        code: ms.toString(),
+        map: ms.generateMap({ hires: true, includeContent: true, source: filename ?? '' }),
+      }
     },
 
     // Inject data-sdt attribute onto the root element so the runtime can

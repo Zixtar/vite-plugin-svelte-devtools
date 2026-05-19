@@ -6,52 +6,14 @@
   const OVERSCAN = 8 // extra rows above/below viewport
 
   // ── collapsed set ──────────────────────────────────────────────────────────
-  const COLLAPSE_KEY = 'svelte-devtools:collapsed'
-
-  function loadCollapsedNames(): Set<string> {
-    try {
-      const raw = localStorage.getItem(COLLAPSE_KEY)
-      if (raw) return new Set(JSON.parse(raw) as string[])
-    } catch (_e) { /* ignore */ }
-    return new Set()
-  }
-
-  function saveCollapsedNames() {
-    try {
-      // Persist names of currently collapsed nodes
-      const names = new Set<string>()
-      for (const id of collapsed) {
-        const node = bridge.nodes.get(id)
-        if (node) names.add(node.name)
-      }
-      localStorage.setItem(COLLAPSE_KEY, JSON.stringify(Array.from(names)))
-    } catch (_e) { /* ignore */ }
-  }
-
   let toggleTick = $state(0)
   const collapsed = new Set<string>()
-
-  // Seed collapsed set from persisted names whenever the tree updates
-  const persistedNames = loadCollapsedNames()
-  $effect(() => {
-    void bridge.nodesVersion
-    if (persistedNames.size === 0) return
-    let changed = false
-    for (const node of bridge.nodes.values()) {
-      if (persistedNames.has(node.name) && node.childIds.length > 0 && !collapsed.has(node.id)) {
-        collapsed.add(node.id)
-        changed = true
-      }
-    }
-    if (changed) toggleTick++
-  })
 
   function toggle(e: MouseEvent, id: string) {
     e.stopPropagation()
     if (collapsed.has(id)) collapsed.delete(id)
     else collapsed.add(id)
     toggleTick++
-    saveCollapsedNames()
   }
 
   // ── flat row list (iterative DFS, no recursion) ────────────────────────────
@@ -132,6 +94,25 @@
       }
     }
     return rows
+  })
+
+  // ── expand ancestors of selected node so it is always visible ────────────
+  $effect(() => {
+    const id = bridge.selectedId
+    if (!id) return
+    // Walk up the parent chain and remove any collapsed ancestor from the set
+    let cur = bridge.nodes.get(id)
+    let changed = false
+    while (cur && cur.parentId) {
+      if (collapsed.has(cur.parentId)) {
+        collapsed.delete(cur.parentId)
+        changed = true
+      }
+      cur = bridge.nodes.get(cur.parentId)
+    }
+    if (changed) {
+      toggleTick++
+    }
   })
 
   // ── scroll selected node into view ─────────────────────────────────────────

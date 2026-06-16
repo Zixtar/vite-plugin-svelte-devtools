@@ -57,6 +57,9 @@ type DevToolsMessage =
   | { type: 'dt:cmd:set-store'; name: string; value: unknown }
   | { type: 'dt:cmd:set-tracking'; enabled: boolean }
   | { type: 'dt:cmd:scroll-to'; id: NodeId }
+  | { type: 'dt:cmd:inspect'; id: NodeId | null }
+  | { type: 'dt:cmd:set-pinned-nodes'; nodeIds: NodeId[] }
+  | { type: 'dt:inspected'; node: ComponentNode }
 
 // ---------------------------------------------------------------------------
 // Internal state
@@ -68,8 +71,8 @@ const uid = () => String(++uidCounter)
 const nodes = new Map<NodeId, ComponentNode>()
 /** Map from component instance (object reference) to its NodeId */
 const instanceMap = new WeakMap<object, NodeId>()
-/** Map from NodeId to its root element getter (for picker reverse-lookup) */
-const elementGetters = new Map<NodeId, () => Element | null>()
+/** Map from NodeId to its root element reference (for picker reverse-lookup) */
+const elementGetters = new Map<NodeId, Element | null>()
 /** Map from NodeId to its context re-snapshot getter (captures raw context map at mount) */
 const contextGetters = new Map<NodeId, () => Record<string, unknown>>()
 /** Map from NodeId to its latest props getter (so we can re-snapshot on resume) */
@@ -80,6 +83,10 @@ const stateGetters = new Map<NodeId, () => Record<string, unknown>>()
 let highlightEl: HTMLElement | null = null
 /** NodeId currently being highlighted */
 let highlightedId: NodeId | null = null
+/** NodeId currently selected/inspected in the overlay */
+let _inspectedId: NodeId | null = null
+/** NodeIds that the user has pinned (always kept fresh) */
+const _pinnedNodeIds = new Set<NodeId>()
 
 // ---------------------------------------------------------------------------
 // Event bus (runtime ↔ overlay share the same window)
@@ -125,6 +132,13 @@ const _pendingNodes = new Map<NodeId, PendingOp>()
 const _pendingRemovals = new Set<NodeId>()
 let _batchScheduled = false
 
+// Maximum number of pending nodes/removals to process in a single frame.
+// During a startup burst with hundreds or thousands of components, cloning
+// every node's props/state/context synchronously would freeze the main thread.
+// Chunking spreads the work across multiple rAF callbacks while keeping all
+// background updates fully visible.
+const BATCH_CHUNK_SIZE = 100
+
 // ---------------------------------------------------------------------------
 // Tracking toggle — when paused the runtime records nothing and emits nothing.
 // Default: PAUSED (zero overhead until the user activates devtools).
@@ -149,31 +163,92 @@ function flushBatch() {
   const added: ComponentNode[] = []
   const updated: ComponentNode[] = []
   const removed: NodeId[] = []
+  let processed = 0
 
+  // Process pending node add/updates in chunks so a startup burst with
+  // thousands of components doesn't block the main thread.
   for (const [id, pending] of _pendingNodes) {
-    if (_pendingRemovals.has(id)) continue  // born and died in same frame — skip entirely
+    if (_pendingRemovals.has(id)) {
+      // born and died in same frame — skip entirely, but still clean up
+      _pendingNodes.delete(id)
+      continue
+    }
     const node = nodes.get(id)
-    if (!node) continue
-    // Snapshot once here — not on every reactive update
-    node.props = safeClone(pending.getProps())
-    node.state = safeClone(pending.getState())
-    node.context = pending.getContext()  // re-snapshot from live context map reference
+    if (!node) {
+      _pendingNodes.delete(id)
+      continue
+    }
+    // Snapshot once here — not on every reactive update.
+    // Only pay the safeClone cost for the inspected node and pinned nodes;
+    // every other node is sent as a lightweight skeleton so startup bursts
+    // with thousands of components don't freeze the app.
+    const shouldSnapshot = id === _inspectedId || _pinnedNodeIds.has(id)
+    if (shouldSnapshot) {
+      node.props = safeClone(pending.getProps())
+      node.state = safeClone(pending.getState())
+      node.context = pending.getContext()  // re-snapshot from live context map reference
+    } else {
+      // Keep skeleton buckets empty; the tree is still fully visible.
+      node.props = {}
+      node.state = {}
+      node.context = {}
+    }
     node.renderTime += pending.renderDuration
     node.renderCount += pending.renderCount
     if (pending.op === 'add') added.push(deepClone(node))
     else updated.push(deepClone(node))
+    _pendingNodes.delete(id)
+    processed++
+    if (processed >= BATCH_CHUNK_SIZE) break
   }
-  for (const id of _pendingRemovals) removed.push(id)
 
-  _pendingNodes.clear()
-  _pendingRemovals.clear()
+  // Use any remaining chunk budget for removals.
+  if (processed < BATCH_CHUNK_SIZE) {
+    for (const id of _pendingRemovals) {
+      removed.push(id)
+      _pendingRemovals.delete(id)
+      processed++
+      if (processed >= BATCH_CHUNK_SIZE) break
+    }
+  }
 
-  // Emit one consolidated batch message
-  emitImmediate({ type: 'dt:batch', added, updated, removed })
+  // Emit the partial batch for this chunk.
+  if (added.length || updated.length || removed.length) {
+    emitImmediate({ type: 'dt:batch', added, updated, removed })
+  }
+
+  // If more work remains, schedule the next chunk on the next frame.
+  if (_pendingNodes.size > 0 || _pendingRemovals.size > 0) {
+    scheduleBatch()
+  }
 }
 
 function emitImmediate(msg: DevToolsMessage) {
   window.dispatchEvent(new CustomEvent(CHANNEL_OUT, { detail: msg }))
+}
+
+/**
+ * Fully snapshots props/state/context for a single node.
+ * Used when the overlay requests inspection or a node becomes pinned.
+ */
+function snapshotNodeDetails(id: NodeId): ComponentNode | null {
+  const node = nodes.get(id)
+  if (!node) return null
+  const getProps = propsGetters.get(id) ?? (() => ({}))
+  const getState = stateGetters.get(id) ?? (() => ({}))
+  const getContext = contextGetters.get(id) ?? (() => ({}))
+  node.props = safeClone(getProps())
+  node.state = safeClone(getState())
+  node.context = getContext()
+  return node
+}
+
+/** Emits a `dt:inspected` message with a full snapshot of the requested node. */
+function emitInspected(id: NodeId | null) {
+  if (id == null) return
+  const node = snapshotNodeDetails(id)
+  if (!node) return
+  emitImmediate({ type: 'dt:inspected', node: deepClone(node) })
 }
 
 function enqueueMount(
@@ -279,7 +354,7 @@ export function __sdt_mount__(
 ) {
   const id = uid()
   instanceMap.set(instance, id)
-  elementGetters.set(id, () => null)
+  elementGetters.set(id, null)
 
   // Capture the raw context map NOW — getAllContexts() is only valid during
   // component initialisation. We keep a reference to the raw map so we can
@@ -288,13 +363,14 @@ export function __sdt_mount__(
   const rawCtxMap = getContext()
   const makeGetContext = () => snapshotOwnContext(rawCtxMap, parentId)
 
-  // Store so __sdt_update__ can re-snapshot context on every flush
+  // Store so __sdt_update__ / snapshotNodeDetails can re-snapshot context
+  // on demand. We deliberately do NOT call it here — snapshotOwnContext runs
+  // safeClone on every object-shaped context value, and for a startup burst
+  // with hundreds of components that is exactly the freeze we're avoiding.
   contextGetters.set(id, makeGetContext)
 
-  // Initial snapshot for the skeleton node
-  const context = makeGetContext()
-
-  // Create skeleton node — props/state will be filled at flush time
+  // Create skeleton node — props/state/context are only filled when the node
+  // is inspected or pinned.
   const node: ComponentNode = {
     id,
     name: componentName,
@@ -303,7 +379,7 @@ export function __sdt_mount__(
     props: {},
     state: {},
     stores: {},
-    context,
+    context: {},
     renderTime: 0,
     renderCount: 0,
     domSelector: undefined,
@@ -327,13 +403,14 @@ export function __sdt_mount__(
 }
 
 /**
- * Called from onMount to register the DOM element for a component.
- * Stamps the element with data-sdt-id and updates the element getter.
+ * Called from the use:__sdt_root__ action to register the DOM element for a component.
+ * Stamps the element with data-sdt-id and caches the element reference directly
+ * so subsequent lookups never need a document-wide querySelector.
  */
 export function __sdt_update_el__(id: NodeId, rootEl: Element | null) {
   if (rootEl) {
     rootEl.setAttribute('data-sdt-id', id)
-    elementGetters.set(id, () => document.querySelector(`[data-sdt-id="${id}"]`))
+    elementGetters.set(id, rootEl)
     const node = nodes.get(id)
     if (node) node.domSelector = elementSelector(rootEl)
   }
@@ -376,10 +453,10 @@ export function __sdt_unmount__(id: NodeId) {
     const n = nodes.get(nodeId)
     if (!n) return
     for (const childId of n.childIds) removeSubtree(childId)
-    try {
-      const el = document.querySelector(`[data-sdt-id="${nodeId}"]`)
-      if (el) el.removeAttribute('data-sdt-id')
-    } catch { /* ignore */ }
+    const el = elementGetters.get(nodeId)
+    if (el) {
+      try { el.removeAttribute('data-sdt-id') } catch { /* ignore */ }
+    }
     nodes.delete(nodeId)
     elementGetters.delete(nodeId)
     propSetters.delete(nodeId)
@@ -394,10 +471,10 @@ export function __sdt_unmount__(id: NodeId) {
   // but we've already removed it from the parent above so handle root separately)
   for (const childId of node.childIds) removeSubtree(childId)
   // Clean up the node itself
-  try {
-    const el = document.querySelector(`[data-sdt-id="${id}"]`)
-    if (el) el.removeAttribute('data-sdt-id')
-  } catch { /* ignore */ }
+  const el = elementGetters.get(id)
+  if (el) {
+    try { el.removeAttribute('data-sdt-id') } catch { /* ignore */ }
+  }
   nodes.delete(id)
   elementGetters.delete(id)
   propSetters.delete(id)
@@ -472,9 +549,17 @@ window.addEventListener('sdt:overlay-ready', () => {
   // Tell the bridge the authoritative pick-mode state (may have been cancelled
   // by Esc while the panel was closed — bridge needs to sync on reconnect)
   emit({ type: 'dt:pick-mode', active: pickModeActive })
-  // Flush any pending batch synchronously so the init snapshot has real props/state
+  // Flush any pending batch synchronously. With lazy inspection only the
+  // inspected/pinned nodes carry full props/state; everything else is a skeleton.
   flushBatch()
+  // Snapshot inspected/pinned nodes for the init payload.
+  for (const id of nodes.keys()) {
+    if (id === _inspectedId || _pinnedNodeIds.has(id)) snapshotNodeDetails(id)
+  }
   emit({ type: 'dt:init', nodes: Array.from(nodes.values()).map(deepClone) })
+  // If a node is already inspected, send its full snapshot immediately so the
+  // inspector panel populates without requiring another selection.
+  emitInspected(_inspectedId)
   if (storeRegistry.size > 0) {
     emit({
       type: 'dt:stores-updated',
@@ -508,8 +593,7 @@ function handleCommand(msg: DevToolsMessage) {
       clearHighlight()
       highlightedId = msg.id ?? null
       if (msg.id) {
-        const getter = elementGetters.get(msg.id)
-        const el = getter?.()
+        const el = elementGetters.get(msg.id)
         if (el) showHighlight(el as HTMLElement)
       }
       break
@@ -525,9 +609,21 @@ function handleCommand(msg: DevToolsMessage) {
       break
     }
     case 'dt:cmd:scroll-to': {
-      const getter = elementGetters.get(msg.id)
-      const el = getter?.()
+      const el = elementGetters.get(msg.id)
       if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      break
+    }
+    case 'dt:cmd:inspect': {
+      _inspectedId = msg.id
+      emitInspected(_inspectedId)
+      break
+    }
+    case 'dt:cmd:set-pinned-nodes': {
+      _pinnedNodeIds.clear()
+      for (const id of msg.nodeIds) _pinnedNodeIds.add(id)
+      // Re-snapshot every pinned node immediately so panels populate without
+      // waiting for the next flush.
+      for (const id of _pinnedNodeIds) emitInspected(id)
       break
     }
     case 'dt:cmd:set-tracking': {
@@ -535,20 +631,19 @@ function handleCommand(msg: DevToolsMessage) {
       _paused = !msg.enabled
       // Ack the new state back to the bridge
       emit({ type: 'dt:tracking', enabled: msg.enabled })
-      // If just resumed, re-enqueue all live nodes so their props/state are
-      // freshly snapshotted (they may have been mounted while paused, or their
-      // getters may have diverged from the last flush).
+      // If just resumed, only the inspected and pinned nodes need full snapshots
+      // for dt:init. Everything else can be sent as skeletons.
       if (!wasEnabled && msg.enabled) {
-        for (const [id, node] of nodes) {
-          const getProps = propsGetters.get(id) ?? (() => ({}))
-          const getState = stateGetters.get(id) ?? (() => ({}))
-          const getCtx   = contextGetters.get(id) ?? (() => ({}))
-          node.props = safeClone(getProps())
-          node.state = safeClone(getState())
-          node.context = getCtx()
+        for (const id of nodes.keys()) {
+          if (id === _inspectedId || _pinnedNodeIds.has(id)) {
+            snapshotNodeDetails(id)
+          }
         }
         flushBatch()
         emit({ type: 'dt:init', nodes: Array.from(nodes.values()).map(deepClone) })
+        // If there is an inspected node, send a dedicated dt:inspected so the
+        // inspector panel populates immediately.
+        emitInspected(_inspectedId)
       }
       // If just paused, discard any pending work
       if (wasEnabled && !msg.enabled) {
@@ -572,8 +667,7 @@ function findNodeByElement(target: Element): { id: NodeId; name: string } | null
   // Collect all nodes whose root element contains the target, then pick the
   // deepest one (the node whose root is not contained by any other match's root).
   const matches: { id: NodeId; name: string; root: Element }[] = []
-  for (const [id, getter] of elementGetters) {
-    const root = getter()
+  for (const [id, root] of elementGetters) {
     if (root && (root === target || root.contains(target))) {
       const node = nodes.get(id)
       if (node) matches.push({ id, name: node.name, root })
@@ -657,7 +751,7 @@ function onPickHover(e: Event) {
 
   const found = findNodeByElement(target)
   if (found) {
-    const el = elementGetters.get(found.id)?.() as HTMLElement | null
+    const el = elementGetters.get(found.id) as HTMLElement | null
     if (el) showHighlight(el)
     if (pickTooltipEl) {
       const node = nodes.get(found.id)
@@ -745,43 +839,70 @@ function clearHighlight() {
 /** Sentinel stored in place of `undefined` so the value survives JSON serialization. */
 export const SDT_UNDEFINED = '__sdt_undefined__'
 
-function safeClone(obj: unknown): Record<string, unknown> {
+const SAFE_CLONE_DEPTH = 5
+const SAFE_CLONE_MAX_DEPTH_VALUE = '[max-depth]'
+
+/**
+ * Snapshot a props/state object for the devtools panel.
+ *
+ * We avoid JSON.parse/stringify on the hot path: it is slow, loses types like Map/Set,
+ * and throws on circular references. A recursive walk with a depth cap handles the
+ * common case (plain objects / arrays / primitives) much faster while still producing
+ * a structured-clone-safe result.
+ */
+function safeClone(obj: unknown, depth = SAFE_CLONE_DEPTH): Record<string, unknown> {
   if (obj == null || typeof obj !== 'object') return {}
+  if (depth <= 0) return { '': SAFE_CLONE_MAX_DEPTH_VALUE }
+  // Fast path: empty props/state objects are extremely common; skip iteration.
+  const keys = Object.keys(obj as object)
+  if (keys.length === 0) return {}
   const out: Record<string, unknown> = {}
-  for (const [k, v] of Object.entries(obj as object)) {
-    if (v === undefined) {
-      out[k] = SDT_UNDEFINED
-      continue
-    }
-    // Skip functions and Svelte snippets entirely — calling String() on a snippet
-    // throws snippet_without_render_tag, and functions are not useful to display.
-    if (typeof v === 'function') continue
+  for (const k of keys) {
     try {
-      out[k] = JSON.parse(JSON.stringify(v))
+      out[k] = cloneSnapshotValue((obj as Record<string, unknown>)[k], depth - 1)
     } catch {
-      // Non-serializable object (circular refs, class instances, etc.) — omit rather
-      // than calling String() which may trigger side-effects or throw on Svelte internals.
+      // Getter or enumerable access threw — omit rather than risk side-effects.
       out[k] = '[object]'
     }
   }
   return out
 }
 
+function cloneSnapshotValue(v: unknown, depth: number): unknown {
+  if (v === undefined) return SDT_UNDEFINED
+  // Skip functions and Svelte snippets entirely — calling String() on a snippet
+  // throws snippet_without_render_tag, and functions are not useful to display.
+  if (typeof v === 'function') return undefined
+  if (v === null || typeof v !== 'object') return v
+  if (depth <= 0) return SAFE_CLONE_MAX_DEPTH_VALUE
+  if (Array.isArray(v)) return v.map((item) => cloneSnapshotValue(item, depth - 1))
+  if (v instanceof Date) return v.toISOString()
+  if (v instanceof Map) return safeClone(Object.fromEntries(v), depth - 1)
+  if (v instanceof Set) return safeClone(Array.from(v), depth - 1)
+  if (ArrayBuffer.isView(v) && !(v instanceof DataView)) {
+    return Array.from(v as ArrayLike<unknown>).map((item) => cloneSnapshotValue(item, depth - 1))
+  }
+  return safeClone(v, depth - 1)
+}
+
 /** Clone a store value — preserves arrays (unlike safeClone which always returns a plain object). */
 function safeCloneStoreValue(value: unknown): unknown {
-  if (value === null || value === undefined) return value
-  if (Array.isArray(value)) {
-    return value.map((item) => {
-      if (item === undefined) return SDT_UNDEFINED
-      if (typeof item === 'function') return undefined
-      try { return JSON.parse(JSON.stringify(item)) } catch (_e) { return '[object]' }
-    })
-  }
-  if (typeof value === 'object') return safeClone(value)
-  return value
+  return cloneSnapshotValue(value, SAFE_CLONE_DEPTH)
 }
 
 function deepClone<T>(v: T): T {
+  // Prefer native structuredClone: orders of magnitude faster than
+  // JSON.parse/stringify for large objects and it preserves Maps/Sets/Dates.
+  // Fall back to JSON round-trip in environments without it (older browsers,
+  // or test environments where the global is missing).
+  if (typeof structuredClone === 'function') {
+    try {
+      return structuredClone(v)
+    } catch {
+      // structuredClone throws on functions/DOM nodes; our nodes should be
+      // safe, but fall back to JSON just in case.
+    }
+  }
   return JSON.parse(JSON.stringify(v)) as T
 }
 
@@ -806,6 +927,8 @@ export function __sdt_reset__() {
   _pendingRemovals.clear()
   _batchScheduled = false
   _paused = true
+  _inspectedId = null
+  _pinnedNodeIds.clear()
 }
 
 /**

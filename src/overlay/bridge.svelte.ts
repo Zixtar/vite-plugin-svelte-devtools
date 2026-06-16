@@ -65,6 +65,9 @@ type DevToolsMessage =
   | { type: 'dt:cmd:set-store'; name: string; value: unknown }
   | { type: 'dt:cmd:set-tracking'; enabled: boolean }
   | { type: 'dt:cmd:scroll-to'; id: NodeId }
+  | { type: 'dt:cmd:inspect'; id: NodeId | null }
+  | { type: 'dt:cmd:set-pinned-nodes'; nodeIds: NodeId[] }
+  | { type: 'dt:inspected'; node: ComponentNode }
 
 // ---------------------------------------------------------------------------
 // Reactive state — one exported object, mutated in-place (never reassigned)
@@ -244,6 +247,7 @@ function onNodeRemoved(id: NodeId) {
     const next = new Set(bridge.pinnedProps)
     for (const t of tombstones) next.delete(`${id}:${t.key}`)
     bridge.pinnedProps = next
+    syncPinnedNodes()
   }
 
   bridge.nodes.delete(id)
@@ -324,11 +328,25 @@ function handleMsg(msg: DevToolsMessage) {
       break
     case 'dt:tracking':
       bridge.tracking = msg.enabled
+      // If tracking was just enabled and we already have a selected node, ask
+      // the runtime for a fresh inspection snapshot.
+      if (msg.enabled && bridge.selectedId) {
+        send({ type: 'dt:cmd:inspect', id: bridge.selectedId })
+      }
       break
+    case 'dt:inspected': {
+      const node = msg.node
+      bridge.nodes.set(node.id, node)
+      bridge._prevProps.set(node.id, { ...node.props })
+      bridge._prevState.set(node.id, { ...node.state })
+      scheduleFlush()
+      break
+    }
     case 'dt:picked':
       bridge.selectedId = msg.id
       bridge.pickMode = false
       bridge.activeTab = 'inspector'
+      send({ type: 'dt:cmd:inspect', id: msg.id })
       break
   }
 }
@@ -404,6 +422,7 @@ initTransport()
 
 export function selectNode(id: NodeId | null) {
   bridge.selectedId = id
+  send({ type: 'dt:cmd:inspect', id })
   // Highlighting is driven by hover only — don't send a highlight on select.
 }
 
@@ -439,12 +458,28 @@ export function togglePickMode() {
   send({ type: 'dt:cmd:pick-mode', active: bridge.pickMode })
 }
 
+/** Derive the set of node ids that have at least one pinned prop/state. */
+function pinnedNodeIds(): NodeId[] {
+  const ids = new Set<NodeId>()
+  for (const pinKey of bridge.pinnedProps) {
+    const [nodeId, ...rest] = pinKey.split(':')
+    ids.add(nodeId)
+  }
+  return Array.from(ids)
+}
+
+/** Tell the runtime which nodes must keep full props/state snapshots fresh. */
+function syncPinnedNodes() {
+  send({ type: 'dt:cmd:set-pinned-nodes', nodeIds: pinnedNodeIds() })
+}
+
 export function togglePin(nodeId: NodeId, key: string) {
   const pinKey = `${nodeId}:${key}`
   const next = new Set(bridge.pinnedProps)
   if (next.has(pinKey)) next.delete(pinKey)
   else next.add(pinKey)
   bridge.pinnedProps = next
+  syncPinnedNodes()
 }
 
 export function clearHistory() {
@@ -453,12 +488,14 @@ export function clearHistory() {
 
 export function unpinAll() {
   bridge.pinnedProps = new Set()
+  syncPinnedNodes()
 }
 
 export function unpinOne(nodeId: NodeId, key: string) {
   const next = new Set(bridge.pinnedProps)
   next.delete(`${nodeId}:${key}`)
   bridge.pinnedProps = next
+  syncPinnedNodes()
 }
 
 export function openInEditor(file: string) {

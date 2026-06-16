@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.1.6] - 2026-06-16
+
+### Fixed
+- **Major performance fix for high-churn apps**: eliminated all `document.querySelector` / `querySelectorAll` calls from the component mount/unmount hot path. The preprocessor now registers each instance's root element via a `use:__sdt_root__` action instead of scanning the whole DOM for `[data-sdt="ComponentName"]` on every mount. The runtime now caches element references directly, so unmount, highlight, scroll-to, and picker lookups no longer query the document. This removes the 4–5 second freezes reported when large numbers of components mount/unmount together.
+- **Props/state snapshot cloning is now much faster**: replaced the hot-path `JSON.parse(JSON.stringify(v))` in `safeClone` with a recursive, depth-capped walk that handles plain objects, arrays, Dates, Maps, Sets, and typed arrays without serialization. Empty props/state objects now take a fast path. This significantly reduces overhead when many components mount or update while devtools tracking is enabled.
+- **Batch node cloning uses native `structuredClone`**: `deepClone` now prefers `structuredClone` and only falls back to `JSON.parse/stringify` when unavailable. This makes sending large batched snapshots (hundreds or thousands of components mounting at once) substantially faster and less likely to freeze the main thread.
+- **Flushing is now chunked**: the runtime processes at most 100 pending node add/updates/removals per animation frame. During a startup burst with hundreds or thousands of components, this spreads the props/state/context snapshot work across multiple frames instead of blocking the main thread in a single long `safeClone` pass. Background component updates remain fully visible.
+- **Lazy props/state/context inspection**: the runtime no longer clones props/state/context for every node on every batch. Only the selected/inspected node and nodes with pinned props/state are fully snapshotted; all other pending nodes are sent as lightweight skeletons. Selecting a component or pinning a value requests a full `dt:inspected` snapshot on demand. This removes the remaining startup freeze caused by `safeClone` while still keeping selected and pinned data live.
+- **Tree scrolling no longer fights the user**: the auto-scroll effect that keeps the selected component in view was reacting to every scroll and every runtime batch update, making manual scrolling impossible. It now only scrolls when the selection changes or the tree is expanded/collapsed, and reads the current scroll position from the DOM instead of reactive state.
+- **Context is no longer eagerly cloned on mount**: `__sdt_mount__` used to call `snapshotOwnContext()` immediately, running `safeClone` on every object-shaped context value during a startup burst. Context is now left empty in the skeleton node and only snapshotted when the node is inspected or pinned.
+
 ## [0.1.5] - 2026-05-19
 
 ### Fixed

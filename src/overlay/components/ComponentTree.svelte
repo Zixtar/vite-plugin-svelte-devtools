@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte'
   import type { ComponentNode } from '../bridge.svelte'
   import { bridge, rootNodes, selectNode, highlightNode } from '../bridge.svelte'
 
@@ -116,17 +117,23 @@
   })
 
   // ── scroll selected node into view ─────────────────────────────────────────
+  // Only react to selection changes and expansion toggles. The runtime sends
+  // frequent batch updates which would otherwise re-run this effect and fight
+  // the user's manual scrolling. Read scroll metrics from the DOM, not state.
   $effect(() => {
     const id = bridge.selectedId
+    void toggleTick
     if (!id || !viewportEl) return
-    const idx = visibleRows.findIndex(r => r.node.id === id)
+    const idx = untrack(() => visibleRows).findIndex(r => r.node.id === id)
     if (idx === -1) return
     const rowTop = idx * ROW_H
     const rowBot = rowTop + ROW_H
-    if (rowTop < scrollTop) {
+    const st = viewportEl.scrollTop
+    const vh = viewportEl.clientHeight
+    if (rowTop < st) {
       viewportEl.scrollTop = rowTop
-    } else if (rowBot > scrollTop + viewportH) {
-      viewportEl.scrollTop = rowBot - viewportH
+    } else if (rowBot > st + vh) {
+      viewportEl.scrollTop = rowBot - vh
     }
   })
 

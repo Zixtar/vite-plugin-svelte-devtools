@@ -1,6 +1,6 @@
 {
   "name": "vite-plugin-svelte-devtools",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "Dev-tools panel for Svelte 5 + Vite apps — component tree, reactive state, props editor, event log, store inspector, performance profiler",
   "type": "module",
   "main": "./dist/plugin/index.cjs",

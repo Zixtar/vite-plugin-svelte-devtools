@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.1.7] - 2026-06-23
+
+### Fixed
+- **`<script module>`-only components no longer throw `__sdt_root__ is not defined`**: the markup transform now detects when a component has no regular `<script>` block and skips injecting `data-sdt` / `use:__sdt_root__`. Previously, snippet-only components such as `Portal.svelte` and `BaseModal.svelte` crashed at runtime because `__sdt_root__` was never defined.
+
 ## [0.1.6] - 2026-06-16
 
 ### Fixed

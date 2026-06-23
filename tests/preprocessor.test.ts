@@ -289,12 +289,12 @@ describe('writableKeys — setter generation', () => {
 
 describe('markup transform', () => {
   it('injects data-sdt on the root element', () => {
-    const code = markupTransform(`<div class="app"><slot /></div>`)
+    const code = markupTransform(`<script>let x = 1</script><div class="app"><slot /></div>`)
     expect(code).toContain('data-sdt="TestComp"')
   })
 
   it('does NOT inject data-sdt on <title> inside svelte:head', () => {
-    const code = markupTransform(`<svelte:head><title>My App</title></svelte:head><div></div>`)
+    const code = markupTransform(`<script>let x = 1</script><svelte:head><title>My App</title></svelte:head><div></div>`)
     expect(code).not.toContain('<title data-sdt')
     // Should inject on the <div> instead, or not inject at all if title is first match
     // Key assertion: title must remain attribute-free
@@ -303,7 +303,7 @@ describe('markup transform', () => {
   })
 
   it('does NOT inject on svelte: special elements', () => {
-    const code = markupTransform(`<svelte:window on:resize={handler} /><div></div>`)
+    const code = markupTransform(`<script>let x = 1</script><svelte:window on:resize={handler} /><div></div>`)
     expect(code).not.toContain('<svelte:window data-sdt')
   })
 
@@ -314,16 +314,33 @@ describe('markup transform', () => {
   })
 
   it('injects use:__sdt_root__ action on the root element', () => {
-    const code = markupTransform(`<div class="app"><slot /></div>`)
+    const code = markupTransform(`<script>let x = 1</script><div class="app"><slot /></div>`)
     expect(code).toContain('use:__sdt_root__')
   })
 
   it('does NOT inject use: action on Svelte component tags', () => {
-    const code = markupTransform(`<Portal><div>content</div></Portal>`)
+    const code = markupTransform(`<script>let x = 1</script><Portal><div>content</div></Portal>`)
     expect(code).not.toContain('<Portal data-sdt')
     expect(code).not.toContain('<Portal use:')
     // It should still find the first real HTML element (the inner <div>)
     expect(code).toContain('<div data-sdt="TestComp" use:__sdt_root__')
+  })
+
+  it('does NOT inject use: action when component only has <script module>', () => {
+    // Real-world case: a component that only exports a snippet from <script module>
+    // has no regular <script> block to define __sdt_root__ in.
+    const code = markupTransform(`<script module>
+  import BaseTooltip from "@/components/system/BaseTooltip.svelte"
+  export { add }
+</script>
+
+{#snippet add()}
+  <span class="tip">
+    <BaseTooltip content="hint"><div>icon</div></BaseTooltip>
+  </span>
+{/snippet}`)
+    expect(code).not.toContain('use:__sdt_root__')
+    expect(code).not.toContain('data-sdt="TestComp"')
   })
 })
 

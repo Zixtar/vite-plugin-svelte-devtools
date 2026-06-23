@@ -202,6 +202,12 @@ $effect(() => {
       if (filename?.includes('node_modules')) return { code: content }
       if (filename?.includes('svelte-devtools')) return { code: content }
 
+      // The __sdt_root__ action function is injected into the component's
+      // regular <script> block. If the component only has <script module> (or
+      // no script at all), that function won't exist and Svelte will throw
+      // "__sdt_root__ is not defined" at runtime. Skip instrumentation here.
+      if (!hasRegularScriptBlock(content)) return { code: content }
+
       // Inject data-sdt on the first real HTML element in the template
       // portion (after all <script> and <style> blocks).
       const name = componentName
@@ -231,6 +237,24 @@ $effect(() => {
       return { code: patched }
     },
   }
+}
+
+/**
+ * Returns true if the source contains at least one regular (non-module)
+ * <script> block. <script module> and <script context="module"> are ignored.
+ * This is used by the markup transform to avoid injecting use:__sdt_root__
+ * when there is no script block to define the action function in.
+ */
+function hasRegularScriptBlock(content: string): boolean {
+  const scriptRe = /<script\b([^>]*)>/gi
+  let m: RegExpExecArray | null
+  while ((m = scriptRe.exec(content)) !== null) {
+    const attrs = m[1]
+    if (!/\bmodule\b/.test(attrs) && !/\bcontext\s*=\s*["']module["']/.test(attrs)) {
+      return true
+    }
+  }
+  return false
 }
 
 // ── AST helpers ──────────────────────────────────────────────────────────────
